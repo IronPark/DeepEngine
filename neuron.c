@@ -18,45 +18,86 @@ double Sigmoid(double x){//Ideneity
     return 1.0 / (1.0 + exp(-x));
 }
 //Activation Functions - END
+double ReLUGrad(double x){
+    return x>0.0?1.0:0.0;
+}
+double LReLUGrad(double x){
+    return x > 0.0 ? 1.0 : 0.01;
+}
+double LinearGrad(double x){//Ideneity
+    return 1.0;
+}
+double SigmoidGrad(double x){//Ideneity
+    return  (1.0 - x) * x;
+}
 
+DE_Neuron* DE_NeuronCreate(unsigned int size,const int type);
+//DE_Network - Start
+DE_Network* DE_NetworkCreate(){
+    DE_Network* neuronNet = (DE_Network*) malloc(sizeof(DE_Network));
+    neuronNet->layers;
+}
+int DE_NetworkSetLayers(DE_Layer* Format, ...){
 
-double GetActGrad(double x,int type);
-DE_Neuron* DE_Neuron_Create(unsigned int size,const int type);
+}
 
 //NeuronLayer - Start
-DE_Neuron* DE_Layer_Create(unsigned int input_size,unsigned int neuron_size,const int type){
+DE_Neuron* DE_LayerCreate(unsigned int input_size,unsigned int neuron_size,const int type){
     DE_Layer* neuronLayer = (DE_Layer*) malloc(sizeof(DE_Layer));
-    neuronLayer->input_size = input_size;
     neuronLayer->neuron_size = neuron_size;
     neuronLayer->neurons =  (DE_Neuron**) malloc(sizeof(DE_Neuron*) * neuron_size);
     for (int i = 0; i < neuron_size; ++i) {
-        neuronLayer->neurons[i] = DE_Neuron_Create(input_size,type);
+        neuronLayer->neurons[i] = DE_NeuronCreate(input_size,type);
     }
 }
 
-//for Output Layer
-void DE_CalGradOutput(DE_Layer* Layers, double *target){
-    for (int j = 0; j < Layers->neuron_size; ++j) {
-        DE_Neuron* neuron = Layers->neurons[j];
-        const double grad = (target[j] - neuron->output) * GetActGrad(neuron->output,neuron->act_type);
-        neuron->grad = grad;
+
+void DE_NetworkTrain( DE_Network* neuronNet,double learningRate, double *target ) {
+    int i,j,k;
+    double temp;
+    DE_Layer *currLayer, *nextLayer,*outputLayer;
+    unsigned int netSize = neuronNet->NetSize;
+    //calculate errors-start
+    //for output layer
+    for ( j = 0; j < outputLayer->neuron_size; j++ ) {
+        DE_Neuron* neuron = currLayer->neurons[j];
+        neuron->grad = neuron->actGrad(neuron->output) * (target[j] - neuron->output);
     }
-}
-//for Hidden Layer
-void DE_CalGradHidden(DE_Layer* TargetLayers,DE_Layer* SrcLayers){
-    for (int j = 0; j < TargetLayers->neuron_size; ++j) {
-        DE_Neuron* neuronT = TargetLayers->neurons[j];
-        double neuron_grad = 0;
-        for (int j = 0; j < SrcLayers->neuron_size; ++j) {
-            DE_Neuron* neuronS = SrcLayers->neurons[j];
-            neuron_grad += (neuronS->weights[j] * neuronS->grad);
+
+    //for other layers
+    for(i = netSize - 1; i >= 0; i--) {
+        currLayer = &neuronNet->layers[i];
+        nextLayer = &neuronNet->layers[i+1];
+        for ( j = 0; j < currLayer->neuron_size; j++ ) {
+            temp = 0;
+            DE_Neuron* cNeuron = currLayer->neurons[j];
+            for ( k = 0; k < nextLayer->neuron_size; k++ ) {
+                DE_Neuron* nLayerNeuron = nextLayer->neurons[k];
+                temp += nLayerNeuron->grad * nLayerNeuron->weights[j];
+            }
+            cNeuron->grad = cNeuron->actGrad(cNeuron->output) * temp;
         }
-        neuronT->grad *= GetActGrad(neuron_grad,neuronT->act_type);
+    }
+
+    //calculate errors-end
+    // update weights
+    double tempWeight;
+    for(i = netSize - 1; i >= 0; i--) {
+        currLayer = &neuronNet->layers[i];
+        nextLayer = &neuronNet->layers[i+1];
+        for ( j = 0; j < currLayer->neuron_size; j++ ) {
+            // weights
+            for( k = 0; k < currLayer->neurons[j]->size; k++ ) {
+                tempWeight = currLayer->neurons[j]->weights[k];
+                const double delta_w =  learningRate * currLayer->neurons[j]->grad * *(currLayer->neurons[j]->inputs[k]);
+                currLayer->neurons[j]->weights[k]++;
+            }
+        }
     }
 }
 
 //NeuronLayer - End
-DE_Neuron* DE_Neuron_Create(unsigned int size,const int type){
+DE_Neuron* DE_NeuronCreate(unsigned int size,const int type){
     DE_Neuron* neuron = (DE_Neuron*) malloc(sizeof(DE_Neuron));
     neuron->size = size;
     neuron->act_type = type;
@@ -66,14 +107,18 @@ DE_Neuron* DE_Neuron_Create(unsigned int size,const int type){
     switch (type){
         case ACT_TYPE_ReLU:
             neuron->activate = ReLU;
+            neuron->actGrad  = ReLUGrad;
             break;
         case ACT_TYPE_LINEAR:
             neuron->activate = Linear;
+            neuron->actGrad  = LinearGrad;
             break;
         case ACT_TYPE_SIGMOID:
             neuron->activate = Sigmoid;
+            neuron->actGrad  = SigmoidGrad;
         case ACT_TYPE_LReLU:
             neuron->activate = LReLU;
+            neuron->actGrad  = LReLUGrad;
             break;
         default:
             break;
@@ -89,22 +134,6 @@ double FeedForward(DE_Neuron* neuron){
         double weight = neuron->weights[i];
         sum+= input*weight;
     }
-    const double sigma = sum + neuron->bias;
-    return neuron->output = neuron->activate(sigma);
+    return neuron->output = neuron->activate(sum);
 }
 
-double GetActGrad(double x,int type){
-    switch (type){
-        case ACT_TYPE_ReLU:
-            return x>0.0?1.0:0.0;
-        case ACT_TYPE_LINEAR:
-            return 1.0;
-        case ACT_TYPE_SIGMOID:
-            return  (1.0 - x) * x;
-        case ACT_TYPE_LReLU:
-            return x > 0.0 ? 1.0 : 0.01;
-        default:
-            break;
-    }
-    return 0.0;
-}
